@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>咩咩叠叠消 · 羊了个羊风格小游戏</title>
+<style>
+  :root {
+    --bg1: #fef6e4;
+    --bg2: #f3d9b1;
+    --panel: #ffffff;
+    --tile-bg: #fff7ec;
+    --tile-border: #f0c999;
+    --tile-shadow: rgba(180, 130, 60, 0.25);
+    --accent: #e8923c;
+    --accent2: #5bb98c;
+    --text: #5a4632;
+    --danger: #e05b5b;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: "PingFang SC", "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+    background: linear-gradient(160deg, var(--bg1), var(--bg2));
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px;
+  }
+  h1 {
+    margin: 6px 0 2px;
+    font-size: 26px;
+    letter-spacing: 2px;
+  }
+  .subtitle { font-size: 13px; opacity: .7; margin-bottom: 12px; }
+  .hud {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .stat {
+    background: var(--panel);
+    border-radius: 12px;
+    padding: 6px 14px;
+    font-size: 14px;
+    box-shadow: 0 2px 6px var(--tile-shadow);
+    font-weight: 600;
+  }
+  .btn {
+    border: none;
+    border-radius: 12px;
+    padding: 8px 18px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    color: #fff;
+    background: var(--accent);
+    box-shadow: 0 3px 8px var(--tile-shadow);
+    transition: transform .1s ease;
+  }
+  .btn:active { transform: scale(.95); }
+  .btn.green { background: var(--accent2); }
+
+  #board {
+    position: relative;
+    background: var(--panel);
+    border-radius: 18px;
+    box-shadow: 0 8px 24px var(--tile-shadow);
+    margin-bottom: 18px;
+    overflow: hidden;
+  }
+  .tile {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 11px;
+    background: var(--tile-bg);
+    border: 2px solid var(--tile-border);
+    box-shadow: 0 3px 6px var(--tile-shadow);
+    user-select: none;
+    transition: transform .12s ease, opacity .2s ease, filter .2s ease;
+  }
+  .tile .face { line-height: 1; }
+  .tile.free { cursor: pointer; }
+  .tile.free:hover { transform: translateY(-3px) scale(1.04); }
+  .tile.locked { filter: brightness(.82) saturate(.8); cursor: default; }
+  .tile.pop { animation: pop .25s ease; }
+  @keyframes pop { 0%{transform:scale(1)} 50%{transform:scale(1.18)} 100%{transform:scale(1)} }
+
+  #slotWrap {
+    background: var(--panel);
+    border-radius: 18px;
+    padding: 12px;
+    box-shadow: 0 8px 24px var(--tile-shadow);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .slot-label { font-size: 13px; opacity: .75; font-weight: 600; }
+  #slots {
+    display: flex;
+    gap: 8px;
+  }
+  .slot {
+    width: 44px;
+    height: 44px;
+    border-radius: 11px;
+    background: #f6ede0;
+    border: 2px dashed var(--tile-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .slot.filled {
+    background: var(--tile-bg);
+    border: 2px solid var(--tile-border);
+    box-shadow: 0 2px 5px var(--tile-shadow);
+  }
+  .slot .face { line-height: 1; }
+  .slot.clearing { animation: clearFlash .4s ease; }
+  @keyframes clearFlash {
+    0%{transform:scale(1); background:var(--accent2);}
+    100%{transform:scale(.2); opacity:0;}
+  }
+
+  #overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(40, 28, 12, .55);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 999;
+    backdrop-filter: blur(3px);
+  }
+  #overlay.show { display: flex; }
+  .modal {
+    background: var(--panel);
+    border-radius: 22px;
+    padding: 30px 40px;
+    text-align: center;
+    box-shadow: 0 12px 40px rgba(0,0,0,.3);
+    animation: rise .3s ease;
+  }
+  @keyframes rise { from{transform:translateY(20px); opacity:0} to{transform:translateY(0); opacity:1} }
+  .modal h2 { margin: 0 0 8px; font-size: 30px; }
+  .modal p { margin: 0 0 18px; opacity: .75; }
+  .tip { font-size: 12px; opacity: .6; margin-top: 14px; max-width: 320px; line-height: 1.6; }
+</style>
+</head>
+<body>
+  <h1>🐑 咩咩叠叠消</h1>
+  <div class="subtitle">点最上面没被压住的方块，凑齐 3 个相同图案即可消除</div>
+
+  <div class="hud">
+    <div class="stat">剩余: <span id="remain">0</span></div>
+    <div class="stat">卡槽: <span id="slotCount">0</span>/7</div>
+    <button class="btn" id="restart">重新开始</button>
+    <button class="btn green" id="shuffle">洗牌(道具)</button>
+  </div>
+
+  <div id="board"></div>
+
+  <div id="slotWrap">
+    <div class="slot-label">底部卡槽（满 7 个且无法消除即失败）</div>
+    <div id="slots"></div>
+  </div>
+
+  <div id="overlay">
+    <div class="modal">
+      <h2 id="resultTitle">🎉 通关!</h2>
+      <p id="resultText">你消掉了所有方块</p>
+      <button class="btn" id="again">再来一局</button>
+    </div>
+  </div>
+
+  <div class="tip">
+    玩法：方块分多层叠放，只有最上层没被压住的才能点。点到卡槽里，同种 3 个自动消除。
+    卡槽最多 7 格，放满且凑不齐 3 个就失败。卡住了可以用"洗牌"道具（每局限用一次）把剩余方块重新打乱重排。
+  </div>
+
+<script>
+(function () {
+  const TILE = 44;          // 方块边长
+  const GAP = 0;            // 同层间距（紧贴）
+  const STEP = TILE + GAP;
+  const SLOT_MAX = 7;
+  const TYPES = ["🐱","🐶","🐰","🐻","🐼","🐨","🐯","🦁","🐸","🐵","🐷","🐮"];
+
+  // 各层：列数、行数（逐层变小并居中，制造层叠）
+  // 合计 77+54+40+24+6 = 201 张（3 的倍数，保证可全消）
+  const LAYER_DEFS = [
+    { cols: 11, rows: 7 },
+    { cols: 9,  rows: 6 },
+    { cols: 8,  rows: 5 },
+    { cols: 6,  rows: 4 },
+    { cols: 3,  rows: 2 },
+  ];
+  const MAX_COLS = Math.max(...LAYER_DEFS.map(l => l.cols));
+  const MAX_ROWS = Math.max(...LAYER_DEFS.map(l => l.rows));
+  const BOARD_W = MAX_COLS * STEP + TILE;   // 留半格给错位
+  const BOARD_H = MAX_ROWS * STEP + TILE;
+
+  const boardEl = document.getElementById("board");
+  const slotsEl = document.getElementById("slots");
+  const remainEl = document.getElementById("remain");
+  const slotCountEl = document.getElementById("slotCount");
+  const overlay = document.getElementById("overlay");
+  const resultTitle = document.getElementById("resultTitle");
+  const resultText = document.getElementById("resultText");
+  const shuffleBtn = document.getElementById("shuffle");
+
+  let tiles = [];        // {id,type,x,y,layer,removed,el}
+  let slotTiles = [];    // 卡槽中的 tile 对象 {type}
+  let totalTiles = 0;
+  let shuffleUsed = false;   // 洗牌道具每局限用一次
+
+  function shuffle(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  // 生成位置（多层叠放）
+  function buildPositions() {
+    const positions = [];
+    LAYER_DEFS.forEach((def, i) => {
+      const ox = ((MAX_COLS - def.cols) * STEP) / 2 + (i % 2) * (TILE / 2);
+      const oy = ((MAX_ROWS - def.rows) * STEP) / 2 + (i % 2) * (TILE / 2);
+      for (let r = 0; r < def.rows; r++) {
+        for (let c = 0; c < def.cols; c++) {
+          positions.push({
+            x: ox + c * STEP,
+            y: oy + r * STEP,
+            layer: i,
+          });
+        }
+      }
+    });
+    // 修整为 3 的倍数（从最高层删，保证仍可解）
+    while (positions.length % 3 !== 0) positions.pop();
+    return positions;
+  }
+
+  function buildTilePool(n) {
+    // n 必为 3 的倍数。构造若干"三连组"，每组一个图案
+    const triples = n / 3;
+    const pool = [];
+    for (let t = 0; t < triples; t++) {
+      const type = TYPES[t % TYPES.length];
+      pool.push(type, type, type);
+    }
+    return shuffle(pool);
+  }
+
+  function isFree(tile) {
+    for (const o of tiles) {
+      if (o.removed || o === tile) continue;
+      if (o.layer > tile.layer) {
+        if (Math.abs(o.x - tile.x) < TILE && Math.abs(o.y - tile.y) < TILE) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  function updateFreeStates() {
+    for (const t of tiles) {
+      if (t.removed) continue;
+      const free = isFree(t);
+      t.el.classList.toggle("free", free);
+      t.el.classList.toggle("locked", !free);
+    }
+  }
+
+  function renderSlots() {
+    slotsEl.innerHTML = "";
+    for (let i = 0; i < SLOT_MAX; i++) {
+      const cell = document.createElement("div");
+      cell.className = "slot";
+      const s = slotTiles[i];
+      if (s) {
+        cell.classList.add("filled");
+        const f = document.createElement("span");
+        f.className = "face";
+        f.style.fontSize = "24px";
+        f.textContent = s.type;
+        cell.appendChild(f);
+      }
+      slotsEl.appendChild(cell);
+    }
+    slotCountEl.textContent = slotTiles.length;
+  }
+
+  function checkClearAndLose() {
+    // 检查是否有三连可消除
+    const counts = {};
+    slotTiles.forEach((s, idx) => {
+      counts[s.type] = counts[s.type] || [];
+      counts[s.type].push(idx);
+    });
+    let clearedType = null;
+    for (const type in counts) {
+      if (counts[type].length >= 3) { clearedType = type; break; }
+    }
+    if (clearedType) {
+      // 移除该类型的前 3 个
+      const idxs = counts[clearedType].slice(0, 3).sort((a, b) => b - a);
+      // 视觉闪烁
+      idxs.forEach(idx => {
+        const cell = slotsEl.children[idx];
+        if (cell) cell.classList.add("clearing");
+      });
+      setTimeout(() => {
+        idxs.forEach(idx => slotTiles.splice(idx, 1));
+        renderSlots();
+        checkClearAndLose(); // 连锁消除
+      }, 220);
+      return;
+    }
+    // 没得消：判负
+    if (slotTiles.length >= SLOT_MAX) {
+      gameOver(false);
+      return;
+    }
+    // 判胜
+    const remaining = tiles.filter(t => !t.removed).length;
+    remainEl.textContent = remaining;
+    if (remaining === 0) {
+      gameOver(true);
+    }
+  }
+
+  function onTileClick(tile) {
+    if (tile.removed || !isFree(tile)) return;
+    tile.removed = true;
+    tile.el.style.display = "none";
+    slotTiles.push({ type: tile.type });
+    renderSlots();
+    updateFreeStates();
+    checkClearAndLose();
+  }
+
+  function layoutTiles() {
+    const positions = buildPositions();
+    totalTiles = positions.length;
+    const pool = buildTilePool(totalTiles);
+    tiles = [];
+    boardEl.innerHTML = "";
+    boardEl.style.width = BOARD_W + "px";
+    boardEl.style.height = BOARD_H + "px";
+
+    positions.forEach((p, i) => {
+      const type = pool[i];
+      const el = document.createElement("div");
+      el.className = "tile";
+      el.style.width = TILE + "px";
+      el.style.height = TILE + "px";
+      el.style.left = p.x + "px";
+      el.style.top = p.y + "px";
+      el.style.zIndex = p.layer;
+      const f = document.createElement("span");
+      f.className = "face";
+      f.style.fontSize = "26px";
+      f.textContent = type;
+      el.appendChild(f);
+      const tile = { id: i, type, x: p.x, y: p.y, layer: p.layer, removed: false, el };
+      el.addEventListener("click", () => onTileClick(tile));
+      boardEl.appendChild(el);
+      tiles.push(tile);
+    });
+  }
+
+  function startGame() {
+    slotTiles = [];
+    shuffleUsed = false;
+    shuffleBtn.disabled = false;
+    shuffleBtn.textContent = "洗牌(道具)";
+    shuffleBtn.style.opacity = "1";
+    shuffleBtn.style.cursor = "pointer";
+    overlay.classList.remove("show");
+    layoutTiles();
+    renderSlots();
+    updateFreeStates();
+    remainEl.textContent = totalTiles;
+  }
+
+  function gameOver(win) {
+    if (win) {
+      resultTitle.textContent = "🎉 通关啦!";
+      resultText.textContent = "你消掉了所有方块，太强了！";
+    } else {
+      resultTitle.textContent = "💥 失败";
+      resultText.textContent = "卡槽满了且凑不齐 3 个，再试一次吧！";
+    }
+    overlay.classList.add("show");
+  }
+
+  // 洗牌道具：把场上剩余所有方块图案重新打乱（每局限用一次）
+  function shuffleBoard() {
+    if (shuffleUsed) return;
+    const live = tiles.filter(t => !t.removed);
+    if (live.length < 2) return;
+    const types = live.map(t => t.type);
+    shuffle(types);
+    live.forEach((t, i) => {
+      t.type = types[i];
+      t.el.querySelector(".face").textContent = types[i];
+      t.el.classList.remove("pop");
+      void t.el.offsetWidth;
+      t.el.classList.add("pop");
+    });
+    shuffleUsed = true;
+    shuffleBtn.disabled = true;
+    shuffleBtn.textContent = "洗牌(已用完)";
+    shuffleBtn.style.opacity = "0.5";
+    shuffleBtn.style.cursor = "not-allowed";
+  }
+
+  document.getElementById("restart").addEventListener("click", startGame);
+  document.getElementById("again").addEventListener("click", startGame);
+  shuffleBtn.addEventListener("click", shuffleBoard);
+
+  startGame();
+})();
+</script>
+</body>
+</html>
